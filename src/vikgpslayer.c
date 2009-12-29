@@ -70,6 +70,7 @@ static void gps_empty_all_cb( gpointer layer_and_vlp[2] );
 #if defined (VIK_CONFIG_REALTIME_GPS_TRACKING) && defined (GPSD_API_MAJOR_VERSION)
 static void gps_empty_realtime_cb( gpointer layer_and_vlp[2] );
 static void gps_start_stop_tracking_cb( gpointer layer_and_vlp[2] );
+static void gps_jump_current_position_cb( gpointer layer_and_vlp[2] );
 static void realtime_tracking_draw(VikGpsLayer *vgl, VikViewport *vp);
 static void rt_gpsd_disconnect(VikGpsLayer *vgl);
 static gboolean rt_gpsd_connect(VikGpsLayer *vgl, gboolean ask_if_failed);
@@ -765,6 +766,13 @@ static void gps_layer_add_menu_items( VikGpsLayer *vgl, GtkMenu *menu, gpointer 
   g_signal_connect_swapped ( G_OBJECT(item), "activate", G_CALLBACK(gps_start_stop_tracking_cb), pass_along );
   gtk_menu_shell_append (GTK_MENU_SHELL (menu), item);
   gtk_widget_show ( item );
+
+  if (vgl->realtime_tracking) {
+    item = gtk_menu_item_new_with_label ( "Jump to current position" );
+    g_signal_connect_swapped ( G_OBJECT(item), "activate", G_CALLBACK(gps_jump_current_position_cb), pass_along );
+    gtk_menu_shell_append (GTK_MENU_SHELL (menu), item);
+    gtk_widget_show ( item );
+  }
 
   item = gtk_menu_item_new();
   gtk_menu_shell_append ( GTK_MENU_SHELL(menu), item );
@@ -1860,6 +1868,28 @@ static void gps_start_stop_tracking_cb( gpointer layer_and_vlp[2])
     vgl->first_realtime_trackpoint = FALSE;
     vgl->trkpt = NULL;
     rt_gpsd_disconnect(vgl);
+  }
+}
+
+static void gps_jump_current_position_cb( gpointer layer_and_vlp[2])
+{
+  VikGpsLayer *vgl = (VikGpsLayer *)layer_and_vlp[0];
+
+  if ((vgl->realtime_fix.fix.mode >= MODE_2D) &&
+      !isnan(vgl->realtime_fix.fix.latitude) &&
+      !isnan(vgl->realtime_fix.fix.longitude) &&
+      !isnan(vgl->realtime_fix.fix.track)) {
+
+    VikWindow *vw = VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vgl));
+    VikViewport *vvp = vik_window_viewport(vw);
+    struct LatLon ll;
+    VikCoord vehicle_coord;
+
+    ll.lat = vgl->realtime_fix.fix.latitude;
+    ll.lon = vgl->realtime_fix.fix.longitude;
+    vik_coord_load_from_latlon(&vehicle_coord, vik_trw_layer_get_coord_mode(vgl->trw_children[TRW_REALTIME]), &ll);
+    vik_viewport_set_center_coord(vvp, &vehicle_coord, FALSE);
+    vik_layer_emit_update(VIK_LAYER(vgl));
   }
 }
 #endif /* VIK_CONFIG_REALTIME_GPS_TRACKING */
