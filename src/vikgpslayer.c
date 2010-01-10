@@ -213,6 +213,7 @@ static VikLayerParam gps_layer_params[] = {
   { VIK_LAYER_GPS, "gps_upload_waypoints", VIK_LAYER_PARAM_BOOLEAN, GROUP_DATA_MODE, N_("Upload Waypoints:"), VIK_LAYER_WIDGET_CHECKBUTTON, NULL, NULL, NULL, vik_lpd_true_default, NULL, NULL },
 #if defined (VIK_CONFIG_REALTIME_GPS_TRACKING) && defined (GPSD_API_MAJOR_VERSION)
   { VIK_LAYER_GPS, "record_tracking", VIK_LAYER_PARAM_BOOLEAN, GROUP_REALTIME_MODE, N_("Recording tracks"), VIK_LAYER_WIDGET_CHECKBUTTON, NULL, NULL, NULL, vik_lpd_true_default, NULL, NULL },
+  { VIK_LAYER_GPS, "record_tracking_all", VIK_LAYER_PARAM_BOOLEAN, GROUP_REALTIME_MODE, N_("Record all trackpoints"), VIK_LAYER_WIDGET_CHECKBUTTON},
   { VIK_LAYER_GPS, "center_start_tracking", VIK_LAYER_PARAM_BOOLEAN, GROUP_REALTIME_MODE, N_("Jump to current position on start"), VIK_LAYER_WIDGET_CHECKBUTTON, NULL, NULL, NULL, vik_lpd_false_default, NULL, NULL },
   { VIK_LAYER_GPS, "moving_map_method", VIK_LAYER_PARAM_UINT, GROUP_REALTIME_MODE, N_("Moving Map Method:"), VIK_LAYER_WIDGET_RADIOGROUP_STATIC, params_vehicle_position, NULL, NULL, moving_map_method_default, NULL, NULL },
   { VIK_LAYER_GPS, "realtime_update_statusbar", VIK_LAYER_PARAM_BOOLEAN, GROUP_REALTIME_MODE, N_("Update Statusbar:"), VIK_LAYER_WIDGET_CHECKBUTTON, NULL, NULL, N_("Display information in the statusbar on GPS updates"), vik_lpd_true_default, NULL, NULL },
@@ -228,6 +229,7 @@ enum {
   PARAM_DOWNLOAD_WAYPOINTS, PARAM_UPLOAD_WAYPOINTS,
 #if defined (VIK_CONFIG_REALTIME_GPS_TRACKING) && defined (GPSD_API_MAJOR_VERSION)
   PARAM_REALTIME_REC,
+  PARAM_REALTIME_REC_ALL,
   PARAM_REALTIME_CENTER_START,
   PARAM_VEHICLE_POSITION,
   PARAM_REALTIME_UPDATE_STATUSBAR,
@@ -353,6 +355,7 @@ struct _VikGpsLayer {
   gchar *gpsd_port;
   gint gpsd_retry_interval;
   gboolean realtime_record;
+  gboolean realtime_record_all;
   gboolean realtime_jump_to_start;
   guint vehicle_position;
   gboolean realtime_update_statusbar;
@@ -577,6 +580,9 @@ static gboolean gps_layer_set_param ( VikGpsLayer *vgl, guint16 id, VikLayerPara
     case PARAM_REALTIME_REC:
       vgl->realtime_record = data.b;
       break;
+    case PARAM_REALTIME_REC_ALL:
+      vgl->realtime_record_all = data.b;
+      break;
     case PARAM_REALTIME_CENTER_START:
       vgl->realtime_jump_to_start = data.b;
       break;
@@ -637,6 +643,9 @@ static VikLayerParamData gps_layer_get_param ( VikGpsLayer *vgl, guint16 id, gbo
       break;
     case PARAM_REALTIME_REC:
       rv.b = vgl->realtime_record;
+      break;
+    case PARAM_REALTIME_REC_ALL:
+      rv.b = vgl->realtime_record_all;
       break;
     case PARAM_REALTIME_CENTER_START:
       rv.b = vgl->realtime_jump_to_start;
@@ -1559,7 +1568,7 @@ static VikTrackpoint* create_realtime_trackpoint(VikGpsLayer *vgl, gboolean forc
       }
       if (replace ||
           ((cur_timestamp != last_timestamp) &&
-          ((forced || 
+          ((forced || vgl->realtime_record_all ||
             ((heading < last_heading) && (heading < (last_heading - 3))) || 
             ((heading > last_heading) && (heading > (last_heading + 3))) ||
             ((alt != VIK_DEFAULT_ALTITUDE) && (alt != last_alt)))))) {
