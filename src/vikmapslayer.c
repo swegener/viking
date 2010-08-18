@@ -284,6 +284,11 @@ struct _VikMapsLayer {
   gdouble last_xmpp;
   gdouble last_ympp;
 
+  gint last_autodl_xmin, last_autodl_xmax;
+  gint last_autodl_ymin, last_autodl_ymax;
+  guint last_autodl_maptype;
+  gint last_autodl_scale;
+
   gint dl_tool_x, dl_tool_y;
 
   GtkMenu *dl_right_click_menu;
@@ -1166,7 +1171,7 @@ static GdkPixbuf *get_pixbuf( VikMapsLayer *vml, guint16 id, const gchar* mapnam
   return pixbuf;
 }
 
-static gboolean should_start_autodownload(VikMapsLayer *vml, VikViewport *vvp)
+static gboolean should_start_autodownload(VikMapsLayer *vml, VikViewport *vvp, gint xmin, gint ymin, gint xmax, gint ymax, gint scale)
 {
   const VikCoord *center = vik_viewport_get_center ( vvp );
 
@@ -1195,6 +1200,19 @@ static gboolean should_start_autodownload(VikMapsLayer *vml, VikViewport *vvp)
       && (vml->last_xmpp == vik_viewport_get_xmpp(vvp))
       && (vml->last_ympp == vik_viewport_get_ympp(vvp)))
     return FALSE;
+
+  if (vml->last_autodl_maptype == vml->maptype
+      && vml->last_autodl_scale == scale
+      && vml->last_autodl_xmin <= xmin && vml->last_autodl_ymin <= ymin
+      && vml->last_autodl_xmax >= xmax && vml->last_autodl_ymax >= ymax)
+    return FALSE;
+
+  vml->last_autodl_maptype = vml->maptype;
+  vml->last_autodl_scale = scale;
+  vml->last_autodl_xmin = xmin;
+  vml->last_autodl_ymin = ymin;
+  vml->last_autodl_xmax = xmax;
+  vml->last_autodl_ymax = ymax;
 
   *(vml->last_center) = *center;
     vml->last_xmpp = vik_viewport_get_xmpp(vvp);
@@ -1325,7 +1343,7 @@ static void maps_layer_draw_section ( VikMapsLayer *vml, VikViewport *vvp, VikCo
     guint max_path_len = strlen(vml->cache_dir) + 40;
     gchar *path_buf = g_malloc ( max_path_len * sizeof(char) );
 
-    if ( (!existence_only) && vml->autodownload  && should_start_autodownload(vml, vvp)) {
+    if ( (!existence_only) && vml->autodownload  && should_start_autodownload(vml, vvp, xmin, ymin, xmax, ymax, ulm.scale)) {
       g_debug("%s: Starting autodownload", __FUNCTION__);
       if ( !vml->adl_only_missing && vik_map_source_supports_download_only_new (map) )
         // Try to download newer tiles
