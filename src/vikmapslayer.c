@@ -1710,7 +1710,7 @@ static void start_download_thread ( VikMapsLayer *vml, VikViewport *vvp, const V
     && vik_map_source_coord_to_mapcoord ( map, br, xzoom, yzoom, &brm ) )
   {
     MapDownloadInfo *mdi = g_malloc ( sizeof(MapDownloadInfo) );
-    gint a, b;
+    gint a, b, diff;
 
     mdi->vml = vml;
     mdi->vvp = vvp;
@@ -1732,6 +1732,15 @@ static void start_download_thread ( VikMapsLayer *vml, VikViewport *vvp, const V
     mdi->xf = MAX(ulm.x, brm.x);
     mdi->y0 = MIN(ulm.y, brm.y);
     mdi->yf = MAX(ulm.y, brm.y);
+
+    /* get 50% more in each direction, but at least 3 and not more than 10 */
+    diff = MIN(MAX(3, (mdi->xf - mdi->x0 + 1 + 1) / 2), 10);
+    mdi->x0 -= diff;
+    mdi->xf += diff;
+
+    diff = MIN(MAX(3, (mdi->yf - mdi->y0 + 1 + 1) / 2), 10);
+    mdi->y0 -= diff;
+    mdi->yf += diff;
 
     mdi->mapstoget = 0;
 
@@ -1815,7 +1824,7 @@ static void maps_layer_download_section ( VikMapsLayer *vml, VikViewport *vvp, V
   }
 
   MapDownloadInfo *mdi = g_malloc(sizeof(MapDownloadInfo));
-  gint i, j;
+  gint i, j, diff;
 
   mdi->vml = vml;
   mdi->vvp = vvp;
@@ -1836,6 +1845,15 @@ static void maps_layer_download_section ( VikMapsLayer *vml, VikViewport *vvp, V
   mdi->xf = MAX(ulm.x, brm.x);
   mdi->y0 = MIN(ulm.y, brm.y);
   mdi->yf = MAX(ulm.y, brm.y);
+
+  /* get 50% more in each direction, but at least 3 and not more than 10 */
+  diff = MIN(MAX(3, (mdi->xf - mdi->x0 + 1 + 1) / 2), 10);
+  mdi->x0 -= diff;
+  mdi->xf += diff;
+
+  diff = MIN(MAX(3, (mdi->yf - mdi->y0 + 1 + 1) / 2), 10);
+  mdi->y0 -= diff;
+  mdi->yf += diff;
 
   mdi->mapstoget = 0;
 
