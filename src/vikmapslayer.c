@@ -904,6 +904,7 @@ typedef struct {
   gchar *cache_dir;
   gchar *filename_buf;
   gint x0, y0, xf, yf;
+  gint hx0, hy0, hxf, hyf;
   MapCoord mapcoord;
   gint maptype;
   gint maxlen;
@@ -914,7 +915,18 @@ typedef struct {
   VikViewport *vvp;
   gboolean map_layer_alive;
   GMutex *mutex;
+  GCond *cond;
+  gint count;
+  gint allcount;
+  gpointer threaddata;
 } MapDownloadInfo;
+
+typedef struct {
+	MapDownloadInfo *mdi;
+	gint x;
+	gint y;
+	gint z;
+} MapDownloadTileInfo;
 
 static void mdi_free ( MapDownloadInfo *mdi )
 {
@@ -934,10 +946,37 @@ static void weak_ref_cb(gpointer ptr, GObject * dead_vml)
   g_mutex_unlock(mdi->mutex);
 }
 
+static void downloadfunc(gpointer data, gpointer user_data)
+{
+	int result = *((int*) data);
+	MapDownloadTileInfo *ti = user_data;
+	MapDownloadInfo *mdi = ti->mdi;
+
+	g_mutex_lock(mdi->mutex);
+	mdi->count++;
+	a_background_thread_progress ( mdi->threaddata, (gdouble) mdi->count / mdi->allcount ); /* this also calls testcancel */
+	g_cond_signal(mdi->cond);
+
+	if (!result) {
+		gdk_threads_enter();
+		a_mapcache_remove_all_shrinkfactors ( ti->x, ti->y, ti->z, vik_map_source_get_uniq_id(MAPS_LAYER_NTH_TYPE(mdi->maptype)), mdi->mapcoord.scale );
+		if (mdi->refresh_display && mdi->map_layer_alive) {
+			/* TODO: check if it's on visible area */
+			vik_layer_emit_update ( VIK_LAYER(mdi->vml) );
+		}
+		gdk_threads_leave();
+	}
+	g_mutex_unlock(mdi->mutex);
+
+	g_free(ti);
+}
+
 static int map_download_thread ( MapDownloadInfo *mdi, gpointer threaddata )
 {
-  void *handle = vik_map_source_download_handle_init(MAPS_LAYER_NTH_TYPE(mdi->maptype));
-  guint donemaps = 0;
+  mdi->cond = g_cond_new();
+  mdi->threaddata = threaddata;
+  mdi->count = mdi->allcount = 0;
+
   gint x, y;
   for ( x = mdi->x0; x <= mdi->xf; x++ )
   {
@@ -948,13 +987,6 @@ static int map_download_thread ( MapDownloadInfo *mdi, gpointer threaddata )
       g_snprintf ( mdi->filename_buf, mdi->maxlen, DIRSTRUCTURE,
                      mdi->cache_dir, vik_map_source_get_uniq_id(MAPS_LAYER_NTH_TYPE(mdi->maptype)),
                      mdi->mapcoord.scale, mdi->mapcoord.z, x, y );
-
-      donemaps++;
-      int res = a_background_thread_progress ( threaddata, ((gdouble)donemaps) / mdi->mapstoget ); /* this also calls testcancel */
-      if (res != 0) {
-        vik_map_source_download_handle_cleanup(MAPS_LAYER_NTH_TYPE(mdi->maptype), handle);
-        return -1;
-      }
 
       if ( g_file_test ( mdi->filename_buf, G_FILE_TEST_EXISTS ) == FALSE ) {
         need_download = TRUE;
@@ -1006,7 +1038,16 @@ static int map_download_thread ( MapDownloadInfo *mdi, gpointer threaddata )
       mdi->mapcoord.x = x; mdi->mapcoord.y = y;
 
       if (need_download) {
-        if ( vik_map_source_download( MAPS_LAYER_NTH_TYPE(mdi->maptype), &(mdi->mapcoord), mdi->filename_buf, handle))
+        MapDownloadTileInfo *ti = g_malloc0(sizeof(*ti));
+        ti->mdi = mdi;
+        ti->x = x;
+        ti->y = y;
+        ti->z = mdi->mapcoord.z;
+        mdi->allcount++;
+	int prio = 0;
+	if (x < mdi->hx0 || x > mdi->hxf || y < mdi->hy0 || y > mdi->hyf)
+	  prio = -1;
+        if ( vik_map_source_download_async( MAPS_LAYER_NTH_TYPE(mdi->maptype), &(mdi->mapcoord), mdi->filename_buf, prio, downloadfunc, ti))
           continue;
       }
 
@@ -1022,11 +1063,13 @@ static int map_download_thread ( MapDownloadInfo *mdi, gpointer threaddata )
 
     }
   }
-  vik_map_source_download_handle_cleanup(MAPS_LAYER_NTH_TYPE(mdi->maptype), handle);
   g_mutex_lock(mdi->mutex);
+  while (mdi->count < mdi->allcount)
+    g_cond_wait(mdi->cond, mdi->mutex);
   if (mdi->map_layer_alive)
     g_object_weak_unref(G_OBJECT(mdi->vml), weak_ref_cb, mdi);
   g_mutex_unlock(mdi->mutex); 
+  g_cond_free(mdi->cond);
   return 0;
 }
 
@@ -1072,10 +1115,15 @@ static void start_download_thread ( VikMapsLayer *vml, VikViewport *vvp, const V
 
     mdi->redownload = redownload;
 
-    mdi->x0 = MIN(ulm.x, brm.x);
-    mdi->xf = MAX(ulm.x, brm.x);
-    mdi->y0 = MIN(ulm.y, brm.y);
-    mdi->yf = MAX(ulm.y, brm.y);
+    mdi->hx0 = MIN(ulm.x, brm.x);
+    mdi->hxf = MAX(ulm.x, brm.x);
+    mdi->hy0 = MIN(ulm.y, brm.y);
+    mdi->hyf = MAX(ulm.y, brm.y);
+
+    mdi->x0 = mdi->hx0 - 5;
+    mdi->xf = mdi->hxf + 5;
+    mdi->y0 = mdi->hy0 - 5;
+    mdi->yf = mdi->hyf + 5;
 
     mdi->mapstoget = 0;
 
@@ -1161,10 +1209,15 @@ void maps_layer_download_section_without_redraw( VikMapsLayer *vml, VikViewport 
 
   mdi->redownload = REDOWNLOAD_NONE;
 
-  mdi->x0 = MIN(ulm.x, brm.x);
-  mdi->xf = MAX(ulm.x, brm.x);
-  mdi->y0 = MIN(ulm.y, brm.y);
-  mdi->yf = MAX(ulm.y, brm.y);
+  mdi->hx0 = MIN(ulm.x, brm.x);
+  mdi->hxf = MAX(ulm.x, brm.x);
+  mdi->hy0 = MIN(ulm.y, brm.y);
+  mdi->hyf = MAX(ulm.y, brm.y);
+
+  mdi->x0 = mdi->hx0 - 5;
+  mdi->xf = mdi->hxf + 5;
+  mdi->y0 = mdi->hy0 - 5;
+  mdi->yf = mdi->hyf + 5;
 
   mdi->mapstoget = 0;
 

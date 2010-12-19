@@ -266,6 +266,19 @@ vik_map_source_download (VikMapSource * self, MapCoord * src, const gchar * dest
 	return (*klass->download)(self, src, dest_fn, handle);
 }
 
+int
+vik_map_source_download_async (VikMapSource * self, MapCoord * src, const gchar * dest_fn, gint prio, GFunc callback, gpointer callback_data )
+{
+	VikMapSourceClass *klass;
+	g_return_val_if_fail (self != NULL, 0);
+	g_return_val_if_fail (VIK_IS_MAP_SOURCE (self), 0);
+	klass = VIK_MAP_SOURCE_GET_CLASS(self);
+
+	g_return_val_if_fail (klass->download_async != NULL, 0);
+
+	return (*klass->download_async)(self, src, dest_fn, prio, callback, callback_data );
+}
+
 void *
 vik_map_source_download_handle_init (VikMapSource *self)
 {

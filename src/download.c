@@ -112,6 +112,66 @@ static VikLayerParam prefs[] = {
   { VIKING_PREFERENCES_NAMESPACE "download_tile_age", VIK_LAYER_PARAM_UINT, VIK_LAYER_GROUP_NONE, N_("Tile age (s):"), VIK_LAYER_WIDGET_SPINBUTTON, params_scales + 0, NULL },
 };
 
+static GThreadPool *pool;
+static GPrivate *pool_download_handle;
+
+struct download_info {
+	const char *hostname;
+	const char *uri;
+	const char *fn;
+	GFunc callback;
+	gpointer callback_data;
+	DownloadMapOptions opt;
+	gint prio;
+};
+
+static void pool_download(gpointer data, gpointer user_data)
+{
+	struct download_info *di = data;
+	void *handle = g_private_get(pool_download_handle);
+	if (!handle) {
+		handle = a_download_handle_init();
+		g_private_set(pool_download_handle, handle);
+	}
+	g_debug("%s: Downloading %s from %s in %p with %p", __FUNCTION__, di->uri, di->hostname, g_thread_self(), handle);
+	int result = a_http_download_get_url(di->hostname, di->uri, di->fn, &di->opt, handle);
+	if (di->callback)
+		di->callback(&result, di->callback_data);
+	g_free((gpointer) di->hostname);
+	g_free((gpointer) di->uri);
+	g_free((gpointer) di->fn);
+	g_free((gpointer) di->opt.referer);
+	g_free((gpointer) di);
+}
+
+static gint compare_pool(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+	struct download_info *_a = a;
+	struct download_info *_b = b;
+
+	return  _b->prio - _a->prio;
+}
+
+int a_http_download_get_url_async ( const char *hostname, const char *uri, const char *fn, DownloadMapOptions *opt, gint prio, GFunc callback, gpointer callback_data)
+{
+	struct download_info *di = g_malloc0(sizeof(*di));
+
+	di->callback = callback;
+	di->callback_data = callback_data;
+	di->hostname = g_strdup(hostname);
+	di->uri = g_strdup(uri);
+	di->fn = g_strdup(fn);
+	di->opt = *opt;
+	di->prio = prio;
+	if (opt->referer)
+		di->opt.referer = g_strdup(opt->referer);
+
+	g_thread_pool_push(pool, di, NULL);
+
+	return DOWNLOAD_NO_ERROR;
+}
+
+
 void a_download_init (void)
 {
 	VikLayerParamData tmp;
@@ -119,6 +179,10 @@ void a_download_init (void)
 	a_preferences_register(prefs, tmp, VIKING_PREFERENCES_GROUP_KEY);
 
 	file_list_mutex = g_mutex_new();
+
+	pool = g_thread_pool_new(pool_download, NULL, 2, FALSE, NULL);
+	g_thread_pool_set_sort_function(pool, compare_pool, NULL);
+	pool_download_handle = g_private_new(a_download_handle_cleanup);
 }
 
 static gboolean lock_file(const char *fn)
