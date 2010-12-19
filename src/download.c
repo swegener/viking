@@ -106,10 +106,12 @@ static GMutex *file_list_mutex = NULL;
 /* spin button scales */
 VikLayerParamScale params_scales[] = {
   {1, 86400*7, 60, 0},		/* download_tile_age */
+  {1, 10, 1, 0},		/* download_threads */
 };
 
 static VikLayerParam prefs[] = {
   { VIKING_PREFERENCES_NAMESPACE "download_tile_age", VIK_LAYER_PARAM_UINT, VIK_LAYER_GROUP_NONE, N_("Tile age (s):"), VIK_LAYER_WIDGET_SPINBUTTON, params_scales + 0, NULL },
+  { VIKING_PREFERENCES_NAMESPACE "download_threads", VIK_LAYER_PARAM_UINT, VIK_LAYER_GROUP_NONE, N_("Download threads:"), VIK_LAYER_WIDGET_SPINBUTTON, params_scales + 1, NULL },
 };
 
 static GThreadPool *pool;
@@ -174,13 +176,18 @@ int a_http_download_get_url_async ( const char *hostname, const char *uri, const
 
 void a_download_init (void)
 {
+	gint threadpool;
+
 	VikLayerParamData tmp;
 	tmp.u = VIK_CONFIG_DEFAULT_TILE_AGE;
 	a_preferences_register(prefs, tmp, VIKING_PREFERENCES_GROUP_KEY);
+	tmp.u = 2;
+	a_preferences_register(prefs + 1, tmp, VIKING_PREFERENCES_GROUP_KEY);
 
 	file_list_mutex = g_mutex_new();
 
-	pool = g_thread_pool_new(pool_download, NULL, 2, FALSE, NULL);
+	threadpool = a_preferences_get(VIKING_PREFERENCES_NAMESPACE "download_threads")->u;
+	pool = g_thread_pool_new(pool_download, NULL, threadpool, FALSE, NULL);
 	g_thread_pool_set_sort_function(pool, compare_pool, NULL);
 	pool_download_handle = g_private_new(a_download_handle_cleanup);
 }
