@@ -152,6 +152,8 @@ int main( int argc, char *argv[] )
   g_thread_init ( NULL );
   gdk_threads_init ();
 
+  g_thread_pool_set_max_idle_time(2000);
+
   gui_initialized = gtk_init_with_args (&argc, &argv, "files+", entries, NULL, &error);
   if (!gui_initialized)
   {
