@@ -962,7 +962,7 @@ static void downloadfunc(gpointer data, gpointer user_data)
 		a_mapcache_remove_all_shrinkfactors ( ti->x, ti->y, ti->z, vik_map_source_get_uniq_id(MAPS_LAYER_NTH_TYPE(mdi->maptype)), mdi->mapcoord.scale );
 		if (mdi->refresh_display && mdi->map_layer_alive) {
 			/* TODO: check if it's on visible area */
-			vik_layer_emit_update ( VIK_LAYER(mdi->vml) );
+			vik_layer_emit_update ( VIK_LAYER(mdi->vml), TRUE );
 		}
 		gdk_threads_leave();
 	}
