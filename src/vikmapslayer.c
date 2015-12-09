@@ -1852,7 +1852,8 @@ static void maps_layer_download_section ( VikMapsLayer *vml, VikViewport *vvp, V
                        vik_map_source_get_name(map),
                        ulm.scale, ulm.z, i, j, mdi->filename_buf, mdi->maxlen,
                        vik_map_source_get_file_extension(map) );
-        if ( g_file_test ( mdi->filename_buf, G_FILE_TEST_EXISTS ) == FALSE )
+        if ( download_method != REDOWNLOAD_NONE ||
+             g_file_test ( mdi->filename_buf, G_FILE_TEST_EXISTS ) == FALSE )
               mdi->mapstoget++;
       }
     }
